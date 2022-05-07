@@ -1,0 +1,99 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"net"
+	"sync"
+)
+
+type Server struct {
+	IP               string
+	Port             int
+	OnlineMap        map[string]*User
+	BoardcastMessage chan string
+	mapLock          sync.RWMutex
+}
+
+//结构体初始化函数
+func NewServer(ip string, port int) *Server {
+	server := &Server{
+		IP:               ip,
+		Port:             port,
+		OnlineMap:        make(map[string]*User),
+		BoardcastMessage: make(chan string),
+	}
+	return server
+}
+
+//地址和端口拼接到一起
+func (server *Server) toString() string {
+	return fmt.Sprintf("%s:%d", server.IP, server.Port)
+}
+
+//处理单个业务
+func (server *Server) handler(connection net.Conn) {
+	fmt.Println("连接建立成功！")
+	fmt.Println("当前连接客户端的地址为:", connection.RemoteAddr().String())
+	user := NewUser(connection)
+	server.mapLock.Lock()
+	server.OnlineMap[user.Name] = user
+	server.mapLock.Unlock()
+	server.Boardcast(user, "已上线")
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := connection.Read(buf)
+			if n == 0 {
+				server.Boardcast(user, "已下线")
+				return
+			}
+			if err != nil && err != io.EOF {
+				fmt.Println("套接字读取错误:", err)
+				return
+			}
+			//去除换行符
+			msg := string(buf[:n-1])
+			server.Boardcast(user, msg)
+		}
+	}()
+}
+func (server *Server) Boardcast(user *User, msg string) {
+	sendMSG := "[" + user.Address + "]" + user.Name + ":" + msg
+	server.BoardcastMessage <- sendMSG
+}
+
+//监听message广播消息channel的goroutine，一旦有消息就发送给全部的在线用户
+func (server *Server) ListenMessage() {
+	for {
+		msg := <-server.BoardcastMessage
+		server.mapLock.Lock()
+		for _, client := range server.OnlineMap {
+			client.Channel <- msg
+		}
+		server.mapLock.Unlock()
+	}
+}
+
+//服务器运行
+func (server *Server) Start() {
+	//socket listen
+	listener, err := net.Listen("tcp", server.toString())
+	if err != nil {
+		fmt.Println("net.Listen函数调用出错:", err)
+		return
+	}
+	defer listener.Close()
+	//启动消息监听协程
+	go server.ListenMessage()
+	for {
+		//socket accept
+		connection, err := listener.Accept()
+		if err != nil {
+			fmt.Println("接受套接字时发生错误:", err)
+			continue
+		}
+		//handler
+		go server.handler(connection)
+	}
+}
