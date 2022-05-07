@@ -35,17 +35,14 @@ func (server *Server) toString() string {
 func (server *Server) handler(connection net.Conn) {
 	fmt.Println("连接建立成功！")
 	fmt.Println("当前连接客户端的地址为:", connection.RemoteAddr().String())
-	user := NewUser(connection)
-	server.mapLock.Lock()
-	server.OnlineMap[user.Name] = user
-	server.mapLock.Unlock()
-	server.Boardcast(user, "已上线")
+	user := NewUser(connection, server)
+	user.Online()
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := connection.Read(buf)
 			if n == 0 {
-				server.Boardcast(user, "已下线")
+				user.Offline()
 				return
 			}
 			if err != nil && err != io.EOF {
@@ -54,7 +51,7 @@ func (server *Server) handler(connection net.Conn) {
 			}
 			//去除换行符
 			msg := string(buf[:n-1])
-			server.Boardcast(user, msg)
+			user.DoMessage(msg)
 		}
 	}()
 }
