@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"strings"
 )
 
 type User struct {
@@ -53,6 +54,19 @@ func (user *User) DoMessage(msg string) {
 			user.connection.Write([]byte(msg))
 		}
 		user.server.mapLock.Unlock()
+	} else if len(msg) > 7 && msg[:7] == "#$%!RN|" {
+		newName := strings.Split(msg, "|")[1]
+		_, ok := user.server.OnlineMap[newName]
+		if ok {
+			user.connection.Write([]byte("当前用户名已被占用！"))
+		} else {
+			user.server.mapLock.Lock()
+			delete(user.server.OnlineMap, user.Name)
+			user.server.OnlineMap[newName] = user
+			user.server.mapLock.Unlock()
+			user.Name = newName
+			user.connection.Write([]byte("已更新新的用户名：" + user.Name + "\n"))
+		}
 	} else {
 		user.server.Boardcast(user, msg)
 	}
