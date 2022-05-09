@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -37,6 +38,7 @@ func (server *Server) handler(connection net.Conn) {
 	fmt.Println("当前连接客户端的地址为:", connection.RemoteAddr().String())
 	user := NewUser(connection, server)
 	user.Online()
+	isLive := make(chan bool)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -52,8 +54,20 @@ func (server *Server) handler(connection net.Conn) {
 			//去除换行符
 			msg := string(buf[:n-1])
 			user.DoMessage(msg)
+			isLive <- true
 		}
 	}()
+	for {
+		select {
+		case <-isLive:
+		case <-time.After(time.Second * 99):
+			user.connection.Write([]byte("长时间未活跃，已自动下线。"))
+			close(user.Channel)
+			delete(user.server.OnlineMap, user.Name)
+			connection.Close()
+			return
+		}
+	}
 }
 func (server *Server) Boardcast(user *User, msg string) {
 	sendMSG := "[" + user.Address + "]" + user.Name + ":" + msg
