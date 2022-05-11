@@ -67,6 +67,23 @@ func (user *User) DoMessage(msg string) {
 			user.Name = newName
 			user.connection.Write([]byte("已更新新的用户名：" + user.Name + "\n"))
 		}
+	} else if len(msg) > 7 && msg[:7] == "#$%!TO|" {
+		remoteName := strings.Split(msg, "|")[1]
+		if remoteName == "" {
+			user.connection.Write([]byte("用户名不能为空"))
+			return
+		}
+		remoteUser, ok := user.server.OnlineMap[remoteName]
+		if !ok {
+			user.connection.Write([]byte("该用户不存在！"))
+			return
+		}
+		content := strings.Split(msg, "|")[2]
+		if content == "" {
+			user.connection.Write([]byte("消息不能为空！"))
+			return
+		}
+		remoteUser.connection.Write([]byte(user.Name + "对你说:" + content))
 	} else {
 		user.server.Boardcast(user, msg)
 	}
