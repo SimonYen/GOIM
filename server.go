@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,7 +53,9 @@ func (server *Server) handler(connection net.Conn) {
 				return
 			}
 			//去除换行符
-			msg := string(buf[:n-1])
+			msg := string(buf)
+			msg = strings.TrimSpace(msg)
+			fmt.Println(msg)
 			user.DoMessage(msg)
 			isLive <- true
 		}
@@ -61,7 +64,7 @@ func (server *Server) handler(connection net.Conn) {
 		select {
 		case <-isLive:
 		case <-time.After(time.Second * 99):
-			user.connection.Write([]byte("长时间未活跃，已自动下线。"))
+			user.connection.Write([]byte("长时间未活跃，已自动下线。\n"))
 			close(user.Channel)
 			delete(user.server.OnlineMap, user.Name)
 			connection.Close()
@@ -70,7 +73,7 @@ func (server *Server) handler(connection net.Conn) {
 	}
 }
 func (server *Server) Boardcast(user *User, msg string) {
-	sendMSG := "[" + user.Address + "]" + user.Name + ":" + msg
+	sendMSG := "[" + user.Address + "]" + user.Name + "说：" + msg
 	server.BoardcastMessage <- sendMSG
 }
 
