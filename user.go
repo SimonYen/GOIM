@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"strings"
 )
@@ -37,53 +38,72 @@ func (user *User) Online() {
 	user.server.mapLock.Lock()
 	user.server.OnlineMap[user.Name] = user
 	user.server.mapLock.Unlock()
-	user.server.Boardcast(user, "已上线")
+	user.server.Boardcast(user, "已上线\n")
 }
 func (user *User) Offline() {
 	user.server.mapLock.Lock()
 	delete(user.server.OnlineMap, user.Name)
 	user.server.mapLock.Unlock()
-	user.server.Boardcast(user, "已下线")
+	user.server.Boardcast(user, "已下线\n")
 }
 
 func (user *User) DoMessage(msg string) {
-	if msg == "#$%!WHO" {
+	if strings.HasPrefix(msg, "!") {
+		userNames := "在线的用户有：\n"
 		user.server.mapLock.Lock()
-		for _, user := range user.server.OnlineMap {
-			msg := "[" + user.Address + "]:" + user.Name + " 在线。"
-			user.connection.Write([]byte(msg))
+		for k := range user.server.OnlineMap {
+			userNames = userNames + k + "\t"
 		}
 		user.server.mapLock.Unlock()
-	} else if len(msg) > 7 && msg[:7] == "#$%!RN|" {
+		user.Channel <- userNames
+	} else if strings.HasPrefix(msg, "@") {
 		newName := strings.Split(msg, "|")[1]
+		user.server.mapLock.Lock()
 		_, ok := user.server.OnlineMap[newName]
+		user.server.mapLock.Unlock()
 		if ok {
-			user.connection.Write([]byte("当前用户名已被占用！"))
+			m := newName + "已存在！"
+			user.Channel <- m
 		} else {
 			user.server.mapLock.Lock()
 			delete(user.server.OnlineMap, user.Name)
+			newName = strings.Trim(newName, "0")
+			fmt.Println(len([]rune(newName)))
 			user.server.OnlineMap[newName] = user
 			user.server.mapLock.Unlock()
 			user.Name = newName
-			user.connection.Write([]byte("已更新新的用户名：" + user.Name + "\n"))
+			fmt.Println(len([]rune(user.Name)))
+			m := "已成功更新用户名，当前你的用户名为：" + user.Name
+			user.Channel <- m
 		}
-	} else if len(msg) > 7 && msg[:7] == "#$%!TO|" {
+	} else if strings.HasPrefix(msg, "#") {
 		remoteName := strings.Split(msg, "|")[1]
 		if remoteName == "" {
-			user.connection.Write([]byte("用户名不能为空"))
+			user.Channel <- "用户名不能为空！"
 			return
 		}
+		user.server.mapLock.Lock()
 		remoteUser, ok := user.server.OnlineMap[remoteName]
+		user.server.mapLock.Unlock()
 		if !ok {
-			user.connection.Write([]byte("该用户不存在！"))
+			fmt.Println(len([]rune(remoteName)))
+			user.server.mapLock.Lock()
+			for k := range user.server.OnlineMap {
+				fmt.Println(k)
+				fmt.Println(len([]rune(k)))
+			}
+			user.server.mapLock.Unlock()
+			m := remoteName + "不存在！"
+			user.Channel <- m
 			return
 		}
 		content := strings.Split(msg, "|")[2]
 		if content == "" {
-			user.connection.Write([]byte("消息不能为空！"))
+			user.Channel <- "消息不能为空！"
 			return
 		}
-		remoteUser.connection.Write([]byte(user.Name + "对你说:" + content))
+		m := user.Name + "对你说： " + content
+		remoteUser.Channel <- m
 	} else {
 		user.server.Boardcast(user, msg)
 	}
