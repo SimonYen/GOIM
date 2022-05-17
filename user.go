@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
 
 type User struct {
+	ID         int
 	Name       string
 	Address    string
 	Channel    chan string
@@ -14,13 +15,14 @@ type User struct {
 	server     *Server
 }
 
-func NewUser(conn net.Conn, server *Server) *User {
+func NewUser(conn net.Conn, server *Server, ID int) *User {
 	user := &User{
 		Name:       conn.RemoteAddr().String(),
 		Address:    conn.RemoteAddr().String(),
 		Channel:    make(chan string),
 		connection: conn,
 		server:     server,
+		ID:         ID,
 	}
 	go user.ListenMessage()
 	return user
@@ -36,64 +38,45 @@ func (user *User) ListenMessage() {
 
 func (user *User) Online() {
 	user.server.mapLock.Lock()
-	user.server.OnlineMap[user.Name] = user
+	user.server.OnlineMap[user.ID] = user
 	user.server.mapLock.Unlock()
 	user.server.Boardcast(user, "已上线\n")
 }
 func (user *User) Offline() {
 	user.server.mapLock.Lock()
-	delete(user.server.OnlineMap, user.Name)
+	delete(user.server.OnlineMap, user.ID)
 	user.server.mapLock.Unlock()
 	user.server.Boardcast(user, "已下线\n")
 }
 
 func (user *User) DoMessage(msg string) {
 	if strings.HasPrefix(msg, "!") {
-		userNames := "在线的用户有：\n"
+		userNames := "在线的用户有：\n用户ID\t用户名\tIP地址\n"
 		user.server.mapLock.Lock()
-		for k := range user.server.OnlineMap {
-			userNames = userNames + k + "\t"
+		for ID, u := range user.server.OnlineMap {
+			userNames += strconv.Itoa(ID) + "\t" + u.Name + "\t" + u.Address + "\n"
 		}
 		user.server.mapLock.Unlock()
 		user.Channel <- userNames
 	} else if strings.HasPrefix(msg, "@") {
 		newName := strings.Split(msg, "|")[1]
-		user.server.mapLock.Lock()
-		_, ok := user.server.OnlineMap[newName]
-		user.server.mapLock.Unlock()
-		if ok {
-			m := newName + "已存在！"
-			user.Channel <- m
-		} else {
-			user.server.mapLock.Lock()
-			delete(user.server.OnlineMap, user.Name)
-			newName = strings.Trim(newName, "0")
-			fmt.Println(len([]rune(newName)))
-			user.server.OnlineMap[newName] = user
-			user.server.mapLock.Unlock()
-			user.Name = newName
-			fmt.Println(len([]rune(user.Name)))
-			m := "已成功更新用户名，当前你的用户名为：" + user.Name
-			user.Channel <- m
-		}
+		user.Name = newName
+		user.Channel <- "已更新用户名，现在你的用户名为：" + user.Name
 	} else if strings.HasPrefix(msg, "#") {
-		remoteName := strings.Split(msg, "|")[1]
-		if remoteName == "" {
-			user.Channel <- "用户名不能为空！"
+		remoteID := strings.Split(msg, "|")[1]
+		if remoteID == "" {
+			user.Channel <- "用户ID不能为空！"
 			return
 		}
+		ID, err := strconv.Atoi(remoteID)
+		if err != nil {
+			user.Channel <- "用户ID必须是整数！"
+		}
 		user.server.mapLock.Lock()
-		remoteUser, ok := user.server.OnlineMap[remoteName]
+		remoteUser, ok := user.server.OnlineMap[ID]
 		user.server.mapLock.Unlock()
 		if !ok {
-			fmt.Println(len([]rune(remoteName)))
-			user.server.mapLock.Lock()
-			for k := range user.server.OnlineMap {
-				fmt.Println(k)
-				fmt.Println(len([]rune(k)))
-			}
-			user.server.mapLock.Unlock()
-			m := remoteName + "不存在！"
+			m := remoteID + "不存在！"
 			user.Channel <- m
 			return
 		}

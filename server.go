@@ -12,7 +12,7 @@ import (
 type Server struct {
 	IP               string
 	Port             int
-	OnlineMap        map[string]*User
+	OnlineMap        map[int]*User
 	BoardcastMessage chan string
 	mapLock          sync.RWMutex
 }
@@ -22,7 +22,7 @@ func NewServer(ip string, port int) *Server {
 	server := &Server{
 		IP:               ip,
 		Port:             port,
-		OnlineMap:        make(map[string]*User),
+		OnlineMap:        make(map[int]*User),
 		BoardcastMessage: make(chan string),
 	}
 	return server
@@ -34,15 +34,15 @@ func (server *Server) toString() string {
 }
 
 //处理单个业务
-func (server *Server) handler(connection net.Conn) {
+func (server *Server) handler(connection net.Conn, ID int) {
 	fmt.Println("连接建立成功！")
 	fmt.Println("当前连接客户端的地址为:", connection.RemoteAddr().String())
-	user := NewUser(connection, server)
+	user := NewUser(connection, server, ID)
 	user.Online()
 	isLive := make(chan bool)
 	go func() {
-		buf := make([]byte, 4096)
 		for {
+			buf := make([]byte, 4096)
 			n, err := connection.Read(buf)
 			if n == 0 {
 				user.Offline()
@@ -66,7 +66,7 @@ func (server *Server) handler(connection net.Conn) {
 		case <-time.After(time.Second * 99):
 			user.connection.Write([]byte("长时间未活跃，已自动下线。\n"))
 			close(user.Channel)
-			delete(user.server.OnlineMap, user.Name)
+			delete(user.server.OnlineMap, user.ID)
 			connection.Close()
 			return
 		}
@@ -91,6 +91,7 @@ func (server *Server) ListenMessage() {
 
 //服务器运行
 func (server *Server) Start() {
+	ID := 0
 	//socket listen
 	listener, err := net.Listen("tcp", server.toString())
 	if err != nil {
@@ -108,6 +109,7 @@ func (server *Server) Start() {
 			continue
 		}
 		//handler
-		go server.handler(connection)
+		go server.handler(connection, ID)
+		ID++
 	}
 }
